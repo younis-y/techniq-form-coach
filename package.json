@@ -1,0 +1,17 @@
+{
+  "name": "techniq",
+  "version": "1.0.0",
+  "description": "Webcam form feedback from MediaPipe pose landmarks: joint-angle geometry, a rep-phase state machine, rule-based fault detection, and a least-squares fit to per-rep form scores",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@elevenlabs/client": "^0.15.0"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  }
+}

@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.vite/
+
+# Credentials — never commit these. All API keys in this project are
+# user-supplied at runtime (URL query string or localStorage).
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Logs
+npm-debug.log*
+yarn-error.log*
+*.log
+
+# Third-party reference material — copyrighted texts are not redistributed here.
+# See knowledge/biomechanics.md for the citation.
+Add-Info/
+*.pdf

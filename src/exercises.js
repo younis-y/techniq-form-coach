@@ -1,0 +1,468 @@
+/**
+ * TechnIQ AI — Exercise Definitions & Biomechanics Rules
+ * Each exercise defines form checks that return alerts with severity.
+ */
+
+import { calculateAngle, angleFromVertical, midpoint, distance } from './angles.js';
+import { LANDMARKS } from './pose.js';
+
+/**
+ * @typedef {Object} FormCheck
+ * @property {string} id - Unique check identifier
+ * @property {string} name - Human-readable name
+ * @property {'danger'|'warning'|'success'} severity
+ * @property {string} message - Alert message
+ * @property {number} score - 0 (worst) to 100 (perfect) for this check
+ * @property {string[]} affectedJoints - Landmark indices that should be highlighted
+ */
+
+/**
+ * Analyse squat form from a single frame of landmarks.
+ * @param {Array} lm - MediaPipe landmarks (33 points, normalized coords)
+ * @returns {{ checks: FormCheck[], overallScore: number, phase: string, jointAngles: Object }}
+ */
+export function analyseSquat(lm) {
+    const checks = [];
+
+    // Key joint angles
+    const leftKneeAngle = calculateAngle(lm[LANDMARKS.LEFT_HIP], lm[LANDMARKS.LEFT_KNEE], lm[LANDMARKS.LEFT_ANKLE]);
+    const rightKneeAngle = calculateAngle(lm[LANDMARKS.RIGHT_HIP], lm[LANDMARKS.RIGHT_KNEE], lm[LANDMARKS.RIGHT_ANKLE]);
+    const leftHipAngle = calculateAngle(lm[LANDMARKS.LEFT_SHOULDER], lm[LANDMARKS.LEFT_HIP], lm[LANDMARKS.LEFT_KNEE]);
+    const rightHipAngle = calculateAngle(lm[LANDMARKS.RIGHT_SHOULDER], lm[LANDMARKS.RIGHT_HIP], lm[LANDMARKS.RIGHT_KNEE]);
+
+    const avgKneeAngle = (leftKneeAngle + rightKneeAngle) / 2;
+    const avgHipAngle = (leftHipAngle + rightHipAngle) / 2;
+
+    // Determine squat phase based on knee angle
+    let phase = 'standing';
+    if (avgKneeAngle < 100) phase = 'bottom';
+    else if (avgKneeAngle < 150) phase = 'descending';
+
+    // Torso lean angle
+    const midShoulder = midpoint(lm[LANDMARKS.LEFT_SHOULDER], lm[LANDMARKS.RIGHT_SHOULDER]);
+    const midHip = midpoint(lm[LANDMARKS.LEFT_HIP], lm[LANDMARKS.RIGHT_HIP]);
+    const torsoLean = angleFromVertical(midShoulder, midHip);
+
+    // ----- CHECK 1: Knee Valgus (Caving Inward) -----
+    const leftKnee = lm[LANDMARKS.LEFT_KNEE];
+    const leftAnkle = lm[LANDMARKS.LEFT_ANKLE];
+    const leftHip = lm[LANDMARKS.LEFT_HIP];
+    const rightKnee = lm[LANDMARKS.RIGHT_KNEE];
+    const rightAnkle = lm[LANDMARKS.RIGHT_ANKLE];
+    const rightHip = lm[LANDMARKS.RIGHT_HIP];
+
+    // Knee should track over ankle — check if knee collapses inward
+    const leftKneeValgus = (leftKnee.x - leftAnkle.x) > 0.03; // left knee too far inward (left side of body)
+    const rightKneeValgus = (rightAnkle.x - rightKnee.x) > 0.03; // right knee too far inward
+    const kneeValgus = leftKneeValgus || rightKneeValgus;
+
+    if (kneeValgus && phase !== 'standing') {
+        checks.push({
+            id: 'knee_valgus',
+            name: 'Knee Valgus',
+            severity: 'danger',
+            message: 'Knees caving inward — injury risk!',
+            score: 30,
+            affectedJoints: [LANDMARKS.LEFT_KNEE, LANDMARKS.RIGHT_KNEE],
+        });
+    } else if (phase !== 'standing') {
+        checks.push({
+            id: 'knee_valgus',
+            name: 'Knee Tracking',
+            severity: 'success',
+            message: 'Knees tracking well over ankles',
+            score: 100,
+            affectedJoints: [LANDMARKS.LEFT_KNEE, LANDMARKS.RIGHT_KNEE],
+        });
+    }
+
+    // ----- CHECK 2: Squat Depth -----
+    if (phase === 'bottom' || phase === 'descending') {
+        const depthScore = avgKneeAngle < 90 ? 100 : Math.max(0, 100 - (avgKneeAngle - 90) * 2);
+        checks.push({
+            id: 'depth',
+            name: 'Squat Depth',
+            severity: avgKneeAngle < 100 ? 'success' : 'warning',
+            message: avgKneeAngle < 100 ? 'Good depth — hip crease below knee' : 'Go deeper for full range of motion',
+            score: depthScore,
+            affectedJoints: [LANDMARKS.LEFT_HIP, LANDMARKS.RIGHT_HIP],
+        });
+    }
+
+    // ----- CHECK 3: Forward Lean -----
+    if (phase !== 'standing') {
+        const leanScore = torsoLean < 30 ? 100 : torsoLean < 45 ? 70 : 30;
+        checks.push({
+            id: 'forward_lean',
+            name: 'Torso Position',
+            severity: torsoLean > 45 ? 'danger' : torsoLean > 30 ? 'warning' : 'success',
+            message: torsoLean > 45
+                ? 'Excessive forward lean — back injury risk'
+                : torsoLean > 30
+                    ? 'Slight forward lean — engage core more'
+                    : 'Good torso position',
+            score: leanScore,
+            affectedJoints: [LANDMARKS.LEFT_SHOULDER, LANDMARKS.RIGHT_SHOULDER],
+        });
+    }
+
+    // ----- CHECK 4: Asymmetric Descent -----
+    const kneeAngleDiff = Math.abs(leftKneeAngle - rightKneeAngle);
+    if (phase !== 'standing' && kneeAngleDiff > 12) {
+        checks.push({
+            id: 'asymmetric',
+            name: 'Asymmetric Squat',
+            severity: 'warning',
+            message: `Uneven descent — ${kneeAngleDiff.toFixed(0)}° difference between sides`,
+            score: Math.max(0, 100 - kneeAngleDiff * 3),
+            affectedJoints: kneeAngleDiff > 0
+                ? [LANDMARKS.LEFT_KNEE, LANDMARKS.RIGHT_KNEE]
+                : [],
+        });
+    }
+
+    // Overall score
+    const activeChecks = checks.filter(c => c.id !== 'depth' || phase === 'bottom');
+    const overallScore = activeChecks.length > 0
+        ? Math.round(activeChecks.reduce((sum, c) => sum + c.score, 0) / activeChecks.length)
+        : 100;
+
+    return {
+        checks,
+        overallScore,
+        phase,
+        jointAngles: {
+            leftKnee: leftKneeAngle,
+            rightKnee: rightKneeAngle,
+            leftHip: leftHipAngle,
+            rightHip: rightHipAngle,
+            torsoLean,
+            kneeAngleDiff,
+        },
+    };
+}
+
+/**
+ * Analyse push-up form.
+ */
+export function analysePushup(lm) {
+    const checks = [];
+
+    const leftElbowAngle = calculateAngle(lm[LANDMARKS.LEFT_SHOULDER], lm[LANDMARKS.LEFT_ELBOW], lm[LANDMARKS.LEFT_WRIST]);
+    const rightElbowAngle = calculateAngle(lm[LANDMARKS.RIGHT_SHOULDER], lm[LANDMARKS.RIGHT_ELBOW], lm[LANDMARKS.RIGHT_WRIST]);
+    const avgElbowAngle = (leftElbowAngle + rightElbowAngle) / 2;
+
+    // Phase
+    let phase = 'up';
+    if (avgElbowAngle < 100) phase = 'bottom';
+    else if (avgElbowAngle < 150) phase = 'descending';
+
+    // Shoulder-Hip-Ankle alignment (hip sag / pike)
+    const midShoulder = midpoint(lm[LANDMARKS.LEFT_SHOULDER], lm[LANDMARKS.RIGHT_SHOULDER]);
+    const midHip = midpoint(lm[LANDMARKS.LEFT_HIP], lm[LANDMARKS.RIGHT_HIP]);
+    const midAnkle = midpoint(lm[LANDMARKS.LEFT_ANKLE], lm[LANDMARKS.RIGHT_ANKLE]);
+    const bodyLineAngle = calculateAngle(midShoulder, midHip, midAnkle);
+
+    // CHECK 1: Hip Sag
+    if (bodyLineAngle < 160) {
+        const sagOrPike = midHip.y > midpoint(midShoulder, midAnkle).y ? 'sag' : 'pike';
+        checks.push({
+            id: 'hip_sag',
+            name: sagOrPike === 'sag' ? 'Hip Sag' : 'Hip Pike',
+            severity: bodyLineAngle < 145 ? 'danger' : 'warning',
+            message: sagOrPike === 'sag'
+                ? 'Hips dropping — engage your core!'
+                : 'Hips too high — lower them into a straight line',
+            score: Math.max(0, (bodyLineAngle - 120) * 2.5),
+            affectedJoints: [LANDMARKS.LEFT_HIP, LANDMARKS.RIGHT_HIP],
+        });
+    } else {
+        checks.push({
+            id: 'hip_sag',
+            name: 'Body Line',
+            severity: 'success',
+            message: 'Good body alignment — straight line from head to heels',
+            score: 100,
+            affectedJoints: [LANDMARKS.LEFT_HIP, LANDMARKS.RIGHT_HIP],
+        });
+    }
+
+    // CHECK 2: Elbow Flare
+    // Measure how far elbows go outward from the torso
+    const leftElbowFlare = Math.abs(lm[LANDMARKS.LEFT_ELBOW].x - lm[LANDMARKS.LEFT_SHOULDER].x);
+    const rightElbowFlare = Math.abs(lm[LANDMARKS.RIGHT_ELBOW].x - lm[LANDMARKS.RIGHT_SHOULDER].x);
+    const avgFlare = (leftElbowFlare + rightElbowFlare) / 2;
+
+    if (phase !== 'up' && avgFlare > 0.12) {
+        checks.push({
+            id: 'elbow_flare',
+            name: 'Elbow Flare',
+            severity: avgFlare > 0.18 ? 'danger' : 'warning',
+            message: 'Elbows flaring out — shoulder injury risk',
+            score: Math.max(0, 100 - (avgFlare - 0.12) * 500),
+            affectedJoints: [LANDMARKS.LEFT_ELBOW, LANDMARKS.RIGHT_ELBOW],
+        });
+    }
+
+    // CHECK 3: Depth
+    if (phase === 'bottom' || phase === 'descending') {
+        const depthScore = avgElbowAngle < 95 ? 100 : Math.max(0, 100 - (avgElbowAngle - 95) * 2.5);
+        checks.push({
+            id: 'depth',
+            name: 'Push-up Depth',
+            severity: avgElbowAngle < 100 ? 'success' : 'warning',
+            message: avgElbowAngle < 100 ? 'Full range of motion' : 'Go deeper for better activation',
+            score: depthScore,
+            affectedJoints: [LANDMARKS.LEFT_ELBOW, LANDMARKS.RIGHT_ELBOW],
+        });
+    }
+
+    const activeChecks = checks.filter(c => c.score !== undefined);
+    const overallScore = activeChecks.length > 0
+        ? Math.round(activeChecks.reduce((sum, c) => sum + c.score, 0) / activeChecks.length)
+        : 100;
+
+    return {
+        checks,
+        overallScore,
+        phase,
+        jointAngles: {
+            leftElbow: leftElbowAngle,
+            rightElbow: rightElbowAngle,
+            bodyLine: bodyLineAngle,
+            elbowFlare: avgFlare,
+        },
+    };
+}
+
+/**
+ * Analyse lateral raise form.
+ */
+export function analyseLateralRaise(lm) {
+    const checks = [];
+
+    // Shoulder abduction angle: hip → shoulder → wrist
+    const leftShoulderAngle = calculateAngle(lm[LANDMARKS.LEFT_HIP], lm[LANDMARKS.LEFT_SHOULDER], lm[LANDMARKS.LEFT_WRIST]);
+    const rightShoulderAngle = calculateAngle(lm[LANDMARKS.RIGHT_HIP], lm[LANDMARKS.RIGHT_SHOULDER], lm[LANDMARKS.RIGHT_WRIST]);
+    const avgShoulderAngle = (leftShoulderAngle + rightShoulderAngle) / 2;
+
+    // Elbow angle (should stay mostly straight, ~160-180°)
+    const leftElbowAngle = calculateAngle(lm[LANDMARKS.LEFT_SHOULDER], lm[LANDMARKS.LEFT_ELBOW], lm[LANDMARKS.LEFT_WRIST]);
+    const rightElbowAngle = calculateAngle(lm[LANDMARKS.RIGHT_SHOULDER], lm[LANDMARKS.RIGHT_ELBOW], lm[LANDMARKS.RIGHT_WRIST]);
+    const avgElbowAngle = (leftElbowAngle + rightElbowAngle) / 2;
+
+    // Phase detection based on shoulder abduction
+    let phase = 'down';
+    if (avgShoulderAngle > 70) phase = 'top';
+    else if (avgShoulderAngle > 35) phase = 'raising';
+
+    // ----- CHECK 1: Arm Height (should reach ~80-90° at top) -----
+    if (phase === 'top') {
+        const heightGood = avgShoulderAngle >= 75 && avgShoulderAngle <= 100;
+        const tooHigh = avgShoulderAngle > 100;
+        checks.push({
+            id: 'arm_height',
+            name: 'Arm Height',
+            severity: heightGood ? 'success' : tooHigh ? 'warning' : 'warning',
+            message: heightGood
+                ? 'Good height — arms at shoulder level'
+                : tooHigh
+                    ? 'Arms too high — stop at shoulder level to protect rotator cuff'
+                    : 'Raise arms higher — aim for shoulder level',
+            score: heightGood ? 100 : tooHigh ? 60 : Math.max(0, avgShoulderAngle * 1.2),
+            affectedJoints: [LANDMARKS.LEFT_SHOULDER, LANDMARKS.RIGHT_SHOULDER],
+        });
+    }
+
+    // ----- CHECK 2: Elbow Bend (should be slight ~15-30°, not fully bent) -----
+    if (phase !== 'down') {
+        const elbowOk = avgElbowAngle > 145;
+        const tooMuchBend = avgElbowAngle < 120;
+        checks.push({
+            id: 'elbow_bend',
+            name: 'Elbow Position',
+            severity: tooMuchBend ? 'danger' : !elbowOk ? 'warning' : 'success',
+            message: tooMuchBend
+                ? 'Elbows too bent — this turns it into an upright row'
+                : !elbowOk
+                    ? 'Keep a slight bend in elbows — do not flex too much'
+                    : 'Good elbow position — slight bend maintained',
+            score: tooMuchBend ? 40 : !elbowOk ? 70 : 100,
+            affectedJoints: [LANDMARKS.LEFT_ELBOW, LANDMARKS.RIGHT_ELBOW],
+        });
+    }
+
+    // ----- CHECK 3: Bilateral Symmetry -----
+    const armAngleDiff = Math.abs(leftShoulderAngle - rightShoulderAngle);
+    if (phase !== 'down' && armAngleDiff > 12) {
+        checks.push({
+            id: 'asymmetric',
+            name: 'Arm Symmetry',
+            severity: armAngleDiff > 20 ? 'danger' : 'warning',
+            message: `Arms uneven — ${armAngleDiff.toFixed(0)}° difference between sides`,
+            score: Math.max(0, 100 - armAngleDiff * 3),
+            affectedJoints: [LANDMARKS.LEFT_WRIST, LANDMARKS.RIGHT_WRIST],
+        });
+    }
+
+    // ----- CHECK 4: Shoulder Shrug (traps compensation) -----
+    // If shoulders rise toward ears, y-distance from ear to shoulder shrinks
+    const leftEarShoulderDist = Math.abs(lm[LANDMARKS.LEFT_EAR].y - lm[LANDMARKS.LEFT_SHOULDER].y);
+    const rightEarShoulderDist = Math.abs(lm[LANDMARKS.RIGHT_EAR].y - lm[LANDMARKS.RIGHT_SHOULDER].y);
+    const avgEarShoulderDist = (leftEarShoulderDist + rightEarShoulderDist) / 2;
+
+    if (phase !== 'down' && avgEarShoulderDist < 0.06) {
+        checks.push({
+            id: 'shoulder_shrug',
+            name: 'Shoulder Shrug',
+            severity: 'danger',
+            message: 'Shrugging shoulders — lower your traps, lead with elbows',
+            score: 30,
+            affectedJoints: [LANDMARKS.LEFT_SHOULDER, LANDMARKS.RIGHT_SHOULDER],
+        });
+    } else if (phase !== 'down') {
+        checks.push({
+            id: 'shoulder_shrug',
+            name: 'Shoulder Position',
+            severity: 'success',
+            message: 'Shoulders depressed — good isolation of lateral delts',
+            score: 100,
+            affectedJoints: [LANDMARKS.LEFT_SHOULDER, LANDMARKS.RIGHT_SHOULDER],
+        });
+    }
+
+    const activeChecks = checks.filter(c => c.score !== undefined);
+    const overallScore = activeChecks.length > 0
+        ? Math.round(activeChecks.reduce((sum, c) => sum + c.score, 0) / activeChecks.length)
+        : 100;
+
+    return {
+        checks,
+        overallScore,
+        phase,
+        jointAngles: {
+            leftShoulder: leftShoulderAngle,
+            rightShoulder: rightShoulderAngle,
+            leftElbow: leftElbowAngle,
+            rightElbow: rightElbowAngle,
+            armAngleDiff,
+        },
+    };
+}
+
+/**
+ * Analyse sit-up form.
+ */
+export function analyseSitup(lm) {
+    const checks = [];
+
+    // Hip angle: shoulder → hip → knee (measures torso-to-thigh angle)
+    const leftHipAngle = calculateAngle(lm[LANDMARKS.LEFT_SHOULDER], lm[LANDMARKS.LEFT_HIP], lm[LANDMARKS.LEFT_KNEE]);
+    const rightHipAngle = calculateAngle(lm[LANDMARKS.RIGHT_SHOULDER], lm[LANDMARKS.RIGHT_HIP], lm[LANDMARKS.RIGHT_KNEE]);
+    const avgHipAngle = (leftHipAngle + rightHipAngle) / 2;
+
+    // Knee angle (should stay bent ~90°)
+    const leftKneeAngle = calculateAngle(lm[LANDMARKS.LEFT_HIP], lm[LANDMARKS.LEFT_KNEE], lm[LANDMARKS.LEFT_ANKLE]);
+    const rightKneeAngle = calculateAngle(lm[LANDMARKS.RIGHT_HIP], lm[LANDMARKS.RIGHT_KNEE], lm[LANDMARKS.RIGHT_ANKLE]);
+    const avgKneeAngle = (leftKneeAngle + rightKneeAngle) / 2;
+
+    // Phase based on hip angle
+    let phase = 'down';
+    if (avgHipAngle < 60) phase = 'top';
+    else if (avgHipAngle < 120) phase = 'rising';
+
+    // ----- CHECK 1: Range of Motion -----
+    if (phase === 'top' || phase === 'rising') {
+        const romGood = avgHipAngle < 70;
+        checks.push({
+            id: 'rom',
+            name: 'Range of Motion',
+            severity: romGood ? 'success' : 'warning',
+            message: romGood
+                ? 'Good curl — full range of motion'
+                : 'Come up higher — engage your core to complete the rep',
+            score: romGood ? 100 : Math.max(30, 100 - (avgHipAngle - 60) * 2),
+            affectedJoints: [LANDMARKS.LEFT_SHOULDER, LANDMARKS.RIGHT_SHOULDER],
+        });
+    }
+
+    // ----- CHECK 2: Neck Position (avoid pulling on neck) -----
+    // If hands are behind head, chin should stay neutral — check ear-to-shoulder distance
+    const leftEarShoulderDist = Math.abs(lm[LANDMARKS.LEFT_EAR].y - lm[LANDMARKS.LEFT_SHOULDER].y);
+    const rightEarShoulderDist = Math.abs(lm[LANDMARKS.RIGHT_EAR].y - lm[LANDMARKS.RIGHT_SHOULDER].y);
+    const avgEarDist = (leftEarShoulderDist + rightEarShoulderDist) / 2;
+
+    if (phase !== 'down' && avgEarDist < 0.04) {
+        checks.push({
+            id: 'neck_strain',
+            name: 'Neck Position',
+            severity: 'danger',
+            message: 'Chin tucked too far — do not pull on your neck',
+            score: 30,
+            affectedJoints: [LANDMARKS.LEFT_EAR, LANDMARKS.RIGHT_EAR],
+        });
+    } else if (phase !== 'down') {
+        checks.push({
+            id: 'neck_strain',
+            name: 'Neck Position',
+            severity: 'success',
+            message: 'Good neck position — neutral spine',
+            score: 100,
+            affectedJoints: [LANDMARKS.LEFT_EAR, LANDMARKS.RIGHT_EAR],
+        });
+    }
+
+    // ----- CHECK 3: Knee Bend (should stay ~80-110°) -----
+    if (avgKneeAngle > 140) {
+        checks.push({
+            id: 'knee_position',
+            name: 'Knee Position',
+            severity: 'warning',
+            message: 'Bend your knees more — feet flat on the floor',
+            score: 50,
+            affectedJoints: [LANDMARKS.LEFT_KNEE, LANDMARKS.RIGHT_KNEE],
+        });
+    }
+
+    // ----- CHECK 4: Bilateral Symmetry -----
+    const hipAngleDiff = Math.abs(leftHipAngle - rightHipAngle);
+    if (phase !== 'down' && hipAngleDiff > 12) {
+        checks.push({
+            id: 'asymmetric',
+            name: 'Torso Symmetry',
+            severity: hipAngleDiff > 20 ? 'danger' : 'warning',
+            message: `Uneven curl — ${hipAngleDiff.toFixed(0)}° difference between sides`,
+            score: Math.max(0, 100 - hipAngleDiff * 3),
+            affectedJoints: [LANDMARKS.LEFT_HIP, LANDMARKS.RIGHT_HIP],
+        });
+    }
+
+    const activeChecks = checks.filter(c => c.score !== undefined);
+    const overallScore = activeChecks.length > 0
+        ? Math.round(activeChecks.reduce((sum, c) => sum + c.score, 0) / activeChecks.length)
+        : 100;
+
+    return {
+        checks,
+        overallScore,
+        phase,
+        jointAngles: {
+            leftHip: leftHipAngle,
+            rightHip: rightHipAngle,
+            leftKnee: leftKneeAngle,
+            rightKnee: rightKneeAngle,
+            hipAngleDiff,
+        },
+    };
+}
+
+/**
+ * Route to correct exercise analyser.
+ */
+export function analyseForm(exercise, landmarks) {
+    if (exercise === 'squat') return analyseSquat(landmarks);
+    if (exercise === 'pushup') return analysePushup(landmarks);
+    if (exercise === 'lateral_raise') return analyseLateralRaise(landmarks);
+    if (exercise === 'situp') return analyseSitup(landmarks);
+    return { checks: [], overallScore: 100, phase: 'standing', jointAngles: {} };
+}
