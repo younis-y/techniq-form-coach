@@ -7,7 +7,8 @@
 const ELEVENLABS_VOICE_ID = 'JBFqnCBsd6RMkjVDRZzb'; // "George" — clear, authoritative
 const MIN_INTERVAL_MS = 4500; // Don't speak more than once every 4.5 seconds
 
-let apiKey = '';
+// No key here — /api/tts holds it server-side.
+let voiceAvailable = false;
 let lastSpeakTime = 0;
 let isSpeaking = false;
 let voiceQueue = [];
@@ -16,7 +17,7 @@ let voiceQueue = [];
  * Initialise the voice module with an ElevenLabs API key.
  */
 export function initVoice(key) {
-    apiKey = key;
+    voiceAvailable = Boolean(key);
     console.log('[TechnIQ] Voice coaching initialised');
 }
 
@@ -60,7 +61,7 @@ async function processQueue() {
 }
 
 async function speak(text) {
-    if (!apiKey) {
+    if (!voiceAvailable) {
         // Fallback to browser TTS if no API key
         fallbackSpeak(text);
         return;
@@ -71,25 +72,17 @@ async function speak(text) {
     showVoiceIndicator(true);
 
     try {
-        const response = await fetch(
-            `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}`,
-            {
-                method: 'POST',
-                headers: {
-                    'xi-api-key': apiKey,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    text,
-                    model_id: 'eleven_turbo_v2_5',
-                    voice_settings: {
-                        stability: 0.6,
-                        similarity_boost: 0.75,
-                        speed: 1.1,
-                    },
-                }),
-            }
-        );
+        const response = await fetch('/api/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                text,
+                voiceId: ELEVENLABS_VOICE_ID,
+                stability: 0.6,
+                similarityBoost: 0.75,
+                speed: 1.1,
+            }),
+        });
 
         if (!response.ok) {
             console.warn('[Voice] ElevenLabs API error, falling back to browser TTS');

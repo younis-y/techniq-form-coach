@@ -5,9 +5,11 @@ node_modules/
 dist/
 .vite/
 
-# Credentials — never commit these. All API keys in this project are
-# user-supplied at runtime (URL query string or localStorage).
+# Credentials — never commit these. Keys are read from .env by server/index.js
+# and never reach the browser. See .env.example for the shape.
 .env
+.env.*
+!.env.example
 .env.*
 !.env.example
 *.pem

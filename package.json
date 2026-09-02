@@ -4,7 +4,8 @@
   "description": "Webcam form feedback from MediaPipe pose landmarks: joint-angle geometry, a rep-phase state machine, rule-based fault detection, and a least-squares fit to per-rep form scores",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node --env-file=.env server/index.js & vite",
+    "server": "node --env-file=.env server/index.js",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -13,5 +14,8 @@
   },
   "devDependencies": {
     "vite": "^6.0.0"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

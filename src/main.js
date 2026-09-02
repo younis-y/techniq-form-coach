@@ -83,31 +83,19 @@ async function startSession() {
         // first use and cached in localStorage for subsequent sessions. There is no
         // fallback value and no key is bundled with this repository -- if the user
         // supplies nothing, the voice coach degrades to browser SpeechSynthesis and
-        // the post-set summary falls back to a template.
-        //
-        // See the Security section of the README: this front end sends the ElevenLabs
-        // key straight from the browser, so any key entered here is only ever as
-        // private as the machine it is entered on. Do not deploy a shared key.
-        const params = new URLSearchParams(window.location.search);
-        const elevenLabsKey = params.get('elevenlabs') || localStorage.getItem('elevenlabs_key') || '';
-        const elevenLabsAgentId = params.get('agent') || localStorage.getItem('elevenlabs_agent_id') || '';
-        const geminiKey = params.get('gemini') || localStorage.getItem('gemini_key') || '';
-
-        // Initialise conversational coach (replaces legacy initVoice)
-        if (elevenLabsKey) {
-            initConversationalCoach(elevenLabsKey, elevenLabsAgentId);
-            localStorage.setItem('elevenlabs_key', elevenLabsKey);
-            if (elevenLabsAgentId) {
-                localStorage.setItem('elevenlabs_agent_id', elevenLabsAgentId);
-            }
-        } else {
-            initConversationalCoach(''); // Will use browser TTS fallback
+        // Capabilities come from the server, which holds the credentials. The
+        // browser is told only what works, never what the keys are — see the
+        // Security section of the README for why the previous build was unsafe.
+        let caps = { hasVoice: false, hasCoach: false, hasAgent: false, agentId: null };
+        try {
+            const res = await fetch('/api/config');
+            if (res.ok) caps = await res.json();
+        } catch (e) {
+            console.warn('[TechnIQ] Proxy unreachable — voice and AI summary fall back to the browser');
         }
 
-        if (geminiKey) {
-            initGemini(geminiKey);
-            localStorage.setItem('gemini_key', geminiKey);
-        }
+        initConversationalCoach(caps.hasVoice, caps.hasAgent ? caps.agentId : '');
+        initGemini(caps.hasCoach);
 
         // Start webcam
         const video = document.getElementById('webcam');

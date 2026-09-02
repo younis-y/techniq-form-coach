@@ -54,27 +54,60 @@ npm run dev
 
 Vite serves on port 3000 and opens a browser. Grant camera access, pick a lift, stand back far enough that hips and ankles are in frame, and press Start. Everything — the pose model, the angle maths, the rule engine, the fit — runs client-side; no video leaves the machine.
 
-API keys are optional and user-supplied. Pass them once in the query string and they are cached in `localStorage`:
+Credentials are optional, and none of them go in the browser. Copy
+`.env.example` to `.env` and fill in whichever you have:
 
-```
-http://localhost:3000/?elevenlabs=YOUR_KEY&agent=YOUR_AGENT_ID&gemini=YOUR_KEY
+```bash
+cp .env.example .env      # ELEVENLABS_API_KEY, ELEVENLABS_AGENT_ID, GEMINI_API_KEY
+npm run dev               # starts the credential proxy on :8787 and Vite on :3000
 ```
 
-Both keys are exposed to anyone who can see the page, and the Gemini one additionally lands in browser history and in server logs — read the Security section below before pasting a key you care about. With no keys the app is fully functional: voice falls back to browser speech synthesis and the summary to a locally assembled template.
+With no keys the app is fully functional: voice falls back to browser speech
+synthesis and the set summary to a locally assembled template. The page asks the
+proxy what is configured (`GET /api/config`) and gets back booleans, never
+secrets, so it degrades without being told why.
 
 ## Security
 
-**Both API keys this app accepts are sent from the browser and are readable by anyone who loads the page.**
+Keys never enter the browser. `server/index.js` holds them and exposes four
+endpoints; the front end calls those and nothing else.
 
-*ElevenLabs.* `src/voice.js` and `src/conversationalCoach.js` both call `api.elevenlabs.io` directly from client-side JavaScript with the key in an `xi-api-key` request header. Any key that reaches this front end — bundled at build time, typed into the URL, or restored from `localStorage` — is present in the page's memory, visible in the network panel, and extractable by any visitor. This is a design limitation of calling a secret-authenticated API from a browser, and it is not fixed by moving the key into an environment variable: a Vite `import.meta.env` value is inlined into the shipped bundle in plain text.
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/config` | booleans describing what is configured |
+| `POST /api/tts` | ElevenLabs text-to-speech, returns `audio/mpeg` |
+| `POST /api/coach` | Gemini set summary, returns `{ text }` |
+| `GET /api/agent-url` | signed WebSocket URL for a private conversational agent |
 
-*Google Gemini.* The same exposure applies to the optional Gemini key, in a worse form. `src/gemini.js:40` interpolates the key directly into the **request URL query string** — `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}` — rather than into a header. A key in a URL is written into places a key in a header is not: browser history, the `Referer` header, and the access logs of every proxy, CDN, and server the request passes through, where it survives long after the session ends and outside the operator's control. `README.md` instructs the reader to pass `&gemini=YOUR_KEY` in the query string of the app's own URL, which puts it in the browser's address bar and history as well, and it is then cached in `localStorage`. Treat any Gemini key given to this app as disclosed. The summary feature is optional: with no key it falls through to a locally assembled template, and that is the only mode this app should be run in with a key you care about.
+**This is a fix, not a mitigation, and it is worth saying what it replaced.** The
+original build shipped the ElevenLabs key as a client-side `xi-api-key` header
+from `src/voice.js` and `src/conversationalCoach.js`, and put the Gemini key in a
+request **query string** in `src/gemini.js`. Both were readable by any visitor
+through the network panel. The query-string form was worse: a key in a URL is
+written into browser history, the `Referer` header, and the access logs of every
+proxy and CDN the request crosses, where it outlives the session entirely. The
+README of the day instructed readers to pass their key in the app's own URL,
+which put it in the address bar too.
 
-The repository ships no key of either kind. The hardcoded ElevenLabs fallback that earlier private revisions carried has been removed, and the value it contained must be treated as compromised and revoked at the provider — scrubbing it from this tree does not invalidate the credential.
+A key that was committed to this repository's history has been revoked. Moving a
+secret into a Vite environment variable would not have helped — `import.meta.env`
+values are inlined into the shipped bundle in plain text.
 
-A production version needs the browser never to hold either key at all. For ElevenLabs the two standard routes are a server-side proxy that holds the key and forwards synthesis requests on behalf of an authenticated user, or ElevenLabs' signed-URL endpoint, where a short-lived per-session URL is minted server-side and the browser receives only that. For Gemini the only route is a server-side proxy; there is no browser-safe key form. Neither is implemented here. This is a hackathon demo and should be run locally with a personal key, or not at all.
+Three things the proxy does beyond forwarding, because a naive proxy is its own
+hazard:
 
-Documented rather than quietly patched, because the shape of the flaw is the point: the fix is architectural, and a reader should be able to see what was wrong before deciding whether to trust what is left. Both flows are named here for the same reason — disclosing one client-side key flow and not the other would be worse than disclosing neither.
+- **Voice allow-list.** `/api/tts` accepts only voice IDs in `ALLOWED_VOICES`.
+  Without it the endpoint is an open relay: anyone reaching it could synthesise
+  against any voice on the account and burn the quota.
+- **Length caps.** 500 characters for speech, 4,000 for a prompt, and a 64 KB
+  body limit, so a single request cannot run up an unbounded bill.
+- **Terse upstream errors.** Provider failures are returned as
+  `{"error":"tts upstream 401"}` rather than passed through, since provider error
+  bodies can echo account detail.
+
+The proxy is the trust boundary. Deploy it somewhere with its own network
+controls, and put authentication in front of it if it is reachable from the open
+internet — the caps above bound the damage, they do not prevent use.
 
 ## Scope
 
@@ -87,7 +120,7 @@ What this is not, stated plainly.
 - **The asymmetry thresholds are not scale-invariant.** They are compared against the raw y-gap in normalised image coordinates, so the same physical imbalance grades more severely the closer the subject stands to the camera. The normalised `asymmetryPct` shown in the sidebar is display-only and is not what the grade is computed from. Whether grading should instead run on the normalised figure — which would require the four thresholds to be recalibrated — is an open question and is deliberately not changed here.
 - **Single-frame, single-person, 2D only.** One pose is tracked, world landmarks are fetched but unused, and every measurement is taken in image coordinates — so results depend on camera placement and on the subject staying side-on or front-on as the checks assume.
 - **The root-cause chain covers 5 of the 12 fault identifiers.** `src/kineticChain.js` has entries for `knee_valgus`, `forward_lean`, `hip_sag`, `elbow_flare` and `asymmetric`. The squat and push-up are covered directly; the lateral raise and sit-up are reached only through the shared `asymmetric` rule, so their lift-specific faults — `arm_height`, `elbow_bend`, `shoulder_shrug`, `rom`, `neck_strain`, `knee_position` — raise alerts with no root-cause output.
-- **Three modules in `src/` are unreachable.** `src/main.js` is the only entry point, and nothing in the import graph reaches `src/voice.js` (the original one-way TTS module, superseded by `src/conversationalCoach.js`), `src/voiceFallback.js`, or `src/biomechanicsKB.js`. `voice.js` is kept in the tree because the security note above cites it as one of the two `xi-api-key` call sites.
+- **Three modules in `src/` are unreachable.** `src/main.js` is the only entry point, and nothing in the import graph reaches `src/voice.js` (the original one-way TTS module, superseded by `src/conversationalCoach.js`), `src/voiceFallback.js`, or `src/biomechanicsKB.js`. `voice.js` is kept because it is the clearest example of the call pattern the proxy replaced, and it now routes through `/api/tts` like everything else.
 - **`supabase/migrations/` is not wired to anything.** The `check_ins` table and its row-level-security policies were written for a planned voice check-in feature. No code in `src/` reads or writes it, and no Supabase client is configured or included.
 - **`knowledge/biomechanics.md` and `src/biomechanicsKB.js` are reference prose, not a validated clinical resource.** The 20 entries in `src/biomechanicsKB.js` were written to give a conversational agent something to ground answers in, but as noted above nothing imports that module. See the Sources section of `knowledge/biomechanics.md`.
 

@@ -3,10 +3,12 @@
  * Post-set AI coaching summary using Gemini 2.0 Flash.
  */
 
-let geminiKey = '';
+// No key lives here. The server holds it; this module only records whether the
+// coach endpoint is available so the set summary can fall back cleanly.
+let coachAvailable = false;
 
-export function initGemini(key) {
-    geminiKey = key;
+export function initGemini(available) {
+    coachAvailable = Boolean(available);
 }
 
 /**
@@ -15,7 +17,7 @@ export function initGemini(key) {
  * @returns {Promise<string>}
  */
 export async function generateCoachingSummary(sessionData) {
-    if (!geminiKey) {
+    if (!coachAvailable) {
         return generateFallbackSummary(sessionData);
     }
 
@@ -36,17 +38,11 @@ ${sessionData.asymmetries.map(a => `- ${a.name}: ${a.asymmetryPct}% ${a.directio
 Focus on: 1) Most critical corrective action, 2) What they did well, 3) Specific recommendation for next set. Be encouraging but honest.`;
 
     try {
-        const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: { temperature: 0.7, maxOutputTokens: 200 },
-                }),
-            }
-        );
+        const response = await fetch('/api/coach', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt, temperature: 0.7, maxOutputTokens: 200 }),
+        });
 
         if (!response.ok) {
             console.warn('[Gemini] API error, using fallback');
@@ -54,7 +50,7 @@ Focus on: 1) Most critical corrective action, 2) What they did well, 3) Specific
         }
 
         const data = await response.json();
-        return data.candidates?.[0]?.content?.parts?.[0]?.text || generateFallbackSummary(sessionData);
+        return data.text || generateFallbackSummary(sessionData);
     } catch (e) {
         console.warn('[Gemini] Error:', e.message);
         return generateFallbackSummary(sessionData);

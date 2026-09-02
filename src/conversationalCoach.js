@@ -21,7 +21,8 @@ const CONTEXT_UPDATE_INTERVAL_MS = 8000; // Push form data context every 8s
 
 // ── State ──────────────────────────────────────────────────────────────
 let conversation = null;
-let apiKey = '';
+// No key here — /api/tts and /api/agent-url hold it server-side.
+let voiceAvailable = false;
 let agentId = '';
 let isConnected = false;
 let isSpeaking = false;
@@ -90,7 +91,7 @@ const PRIORITY = {
  * @param {string} elevenLabsAgentId - Conversational AI Agent ID (from dashboard)
  */
 export function initConversationalCoach(elevenLabsApiKey, elevenLabsAgentId = '') {
-    apiKey = elevenLabsApiKey;
+    voiceAvailable = Boolean(elevenLabsApiKey);
     agentId = elevenLabsAgentId;
     console.log('[TechnIQ] Conversational coach initialised', agentId ? '(Conversational AI)' : '(Legacy TTS)');
 }
@@ -102,9 +103,9 @@ export function initConversationalCoach(elevenLabsApiKey, elevenLabsAgentId = ''
 export async function startCoachingSession(exercise = 'squat') {
     currentFormState.exercise = exercise;
 
-    if (agentId && apiKey) {
+    if (agentId) {
         await startConversationalSession();
-    } else if (apiKey) {
+    } else if (voiceAvailable) {
         console.log('[TechnIQ] No Agent ID — using legacy one-way TTS');
         startProactiveCoaching();
     } else {
@@ -492,7 +493,7 @@ async function legacyProcessQueue() {
 }
 
 async function legacySpeak(text) {
-    if (!apiKey) {
+    if (!voiceAvailable) {
         legacyFallbackSpeak(text);
         return;
     }
@@ -502,25 +503,17 @@ async function legacySpeak(text) {
     showVoiceIndicator(true);
 
     try {
-        const response = await fetch(
-            `https://api.elevenlabs.io/v1/text-to-speech/${DEFAULT_VOICE_ID}`,
-            {
-                method: 'POST',
-                headers: {
-                    'xi-api-key': apiKey,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    text,
-                    model_id: 'eleven_turbo_v2_5',
-                    voice_settings: {
-                        stability: 0.7,
-                        similarity_boost: 0.8,
-                        speed: 0.85,
-                    },
-                }),
-            }
-        );
+        const response = await fetch('/api/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                text,
+                voiceId: DEFAULT_VOICE_ID,
+                stability: 0.7,
+                similarityBoost: 0.8,
+                speed: 0.85,
+            }),
+        });
 
         if (!response.ok) {
             console.warn('[Voice] ElevenLabs API error, falling back to browser TTS');
