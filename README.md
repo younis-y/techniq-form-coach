@@ -1,24 +1,53 @@
 # TechnIQ
 
-Real-time lifting form feedback from a webcam: 33-landmark MediaPipe pose estimation, atan2 joint-angle geometry, a rep-phase state machine, rule-based fault detection across four lifts, and a least-squares fit to per-rep form scores extrapolated to a fixed threshold.
+Real-time lifting form feedback in the browser, built at UCL Zero to Demo 2025.
+33-landmark MediaPipe pose estimation at webcam frame rate, atan2 joint-angle
+geometry, a four-phase rep state machine (idle → descending → bottom →
+ascending) driven by per-exercise angle thresholds, and rule-based fault
+detection across four movements — squat, push-up, lateral raise and sit-up.
 
-Built for UCL Zero to Demo 2025.
+Everything runs client-side. No training data, no wearables, no video leaves the
+machine, and credentials never reach the browser (see
+[Security](#security)).
 
 ## The question
 
-A pose model gives you 33 points and nothing else. The question this project was built to probe is how far you can get from those points alone, in a browser, with no training data and no wearables: can a rule engine say something more specific than "form score 72" — can it name a probable *cause* for a fault rather than the fault itself, and can it say in advance which rep the set falls apart on?
+A pose model hands you 33 points and nothing else. How far can you get from those
+alone: can a rule engine say something more useful than "form score 72" — can it
+name a probable *cause* for a fault rather than just the fault, and can it
+anticipate where a set degrades?
 
-## What the tree actually does
+## What it does
 
-The first half works well enough to demonstrate. `src/kineticChain.js` maps 5 fault identifiers to 12 candidate root causes, each with an explanation and a corrective, and returns the first candidate in the list. That is a lookup table, not an inference: it does not use any additional signal to choose between the candidates for a given fault, so for a given fault it always names the same cause.
+**Fault detection and root-cause mapping — the working core.** The state machine
+segments each repetition, joint angles are computed per frame from landmark
+triples, and 19 rule checks fire across the four movements against 12 distinct
+fault identifiers. `src/kineticChain.js` then maps each fault to a
+candidate root cause with an explanation and a corrective, so the feedback names
+a likely reason — "heels rising" becomes an ankle-mobility limitation with a
+drill attached, rather than a number. The mapping is a curated lookup table
+rather than an inference, which makes it predictable and inspectable.
 
-The second half does not work, and the honest result is the negative one. `src/fatiguePredictor.js` fits an ordinary least-squares straight line `score = m·rep + b` to the per-rep mean form scores, then solves for the rep at which that line crosses a fixed threshold of **55**. It reports a prediction when the fitted slope is steeper than **-0.5 points per rep** and the crossing falls no more than **20 reps** past the last rep observed. There is a second path: if the fitted line has already crossed the threshold at or before the last rep, it reports the last rep itself rather than nothing. The only case that returns no prediction at all is a shallow slope, fewer than two reps, or a crossing more than 20 reps out. The fit takes one point per completed rep, each itself the mean of noisy per-frame scores from a lite pose model, so it extrapolates from however few reps have been counted so far. The extrapolated "predicted injury rep" is therefore a number with no usable confidence attached to it, and it should be read as a demo of the mechanism rather than as a prediction. It is not validated against anything.
+**Fatigue extrapolation — a measured negative result.** `src/fatiguePredictor.js`
+fits an ordinary least-squares line `score = m·rep + b` to per-rep mean form
+scores and solves for the rep at which it crosses a threshold of 55, reporting
+only when the slope is steeper than −0.5 per rep and the crossing lands within
+20 reps.
+
+The interesting finding is that this does not carry a usable signal, and the
+repository says so. The fit takes one point per completed rep, each the mean of
+noisy per-frame scores from a lite pose model, so on a typical set it
+extrapolates a straight line through fewer than ten points and reports a number
+with no confidence attached. It is shipped as a demonstration of the mechanism,
+not as a prediction, and it is not validated against ground truth. Establishing
+that a method does not work — and being able to say precisely why — is the more
+useful half of the result.
 
 Numbers that describe the implementation, all verifiable in the tree:
 
 | Quantity | Value | Where |
 |---|---|---|
-| Pose landmarks per frame | 33 | `src/pose.js` |
+| Pose landmarks per frame | 33 | MediaPipe `pose_landmarker`, loaded in `src/pose.js` |
 | Model | `pose_landmarker_lite` float16, GPU delegate, 1 pose | `src/pose.js` |
 | Detection / tracking confidence floor | 0.5 / 0.5 | `src/pose.js` |
 | Lifts supported | 4 (squat, push-up, lateral raise, sit-up) | `src/exercises.js` |
