@@ -1,5 +1,7 @@
 # TechnIQ
 
+**[▶ Try it in the browser](https://younis-y.github.io/techniq-form-coach/)** — needs webcam permission. The hosted build is static, so pose estimation, rep counting and fault detection run; the ElevenLabs voice and the Gemini summary need the local proxy and are off.
+
 Real-time lifting form feedback in the browser, built at UCL Zero to Demo 2025.
 33-landmark MediaPipe pose estimation at webcam frame rate, atan2 joint-angle
 geometry, a four-phase rep state machine (idle → descending → bottom →
