@@ -1,6 +1,9 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  // GitHub Pages serves the project from /<repo>/, not from the domain root.
+  // Local dev and `vite preview` keep the root base.
+  base: process.env.GITHUB_ACTIONS ? '/techniq-form-coach/' : '/',
   server: {
     port: 3000,
     open: true,
