@@ -28,22 +28,22 @@
         <div class="feature-card">
           <div class="feature-icon">🔗</div>
           <h3>Root-Cause Lookup</h3>
-          <p>Maps 5 detected faults to a fixed list of candidate causes and correctives. A lookup table, not inference — the same fault always names the same cause.</p>
+          <p>Every fault it spots comes with a likely cause and a drill to fix it. It is a fixed lookup table, so the same fault always names the same cause.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">📈</div>
           <h3>Form-Score Trend</h3>
-          <p>Fits a straight line to your per-rep scores and extrapolates it to a fixed cutoff of 55. One noisy point per rep, no confidence interval, validated against nothing. An illustration of the mechanism, not a forecast.</p>
+          <p>Fits a straight line to your per-rep scores and, once 5+ reps show a clear decline, estimates when form drops below 55. A rough trend, not a validated forecast.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">↔️</div>
           <h3>Left/Right Gap</h3>
-          <p>Compares the vertical position of four landmark pairs in a single frame against hand-set thresholds. Depends on where you stand relative to the camera; makes no claim about injury.</p>
+          <p>Compares your left and right shoulders, hips, knees and ankles, measured against your body length so it grades the same near or far from the camera. Thresholds are hand-set.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">🎙️</div>
           <h3>Optional Voice</h3>
-          <p>With an ElevenLabs agent key, a two-way voice session. Without one, throttled canned cues via browser speech synthesis.</p>
+          <p>Run locally with an ElevenLabs key for a two-way voice coach. Without one, you get spoken cues through your browser.</p>
         </div>
       </div>
 
@@ -74,11 +74,6 @@
         Start Coaching Session
       </button>
       <p class="camera-note">Requires webcam + microphone access. Position yourself so your full body is visible.</p>
-      <p class="camera-note" style="font-size: 0.7rem; opacity: 0.5; margin-top: 0.5rem;">Optional API keys via URL:
-        <code>?elevenlabs=KEY&agent=AGENT_ID&gemini=KEY</code> — both keys are held and sent by this page in your
-        browser and are readable by anyone who loads it; the Gemini key is additionally placed in the request URL, so it
-        also lands in browser history and server logs. Use a personal key or none. The app is fully functional without both.
-      </p>
       <p class="camera-note" style="margin-top: 1.25rem; line-height: 1.5;">
         <strong>Not medical advice.</strong> This is an unvalidated demonstration built in a hackathon. Its thresholds were
         set by hand, have never been checked against ground truth or reviewed clinically, and it cannot see load, tempo,
