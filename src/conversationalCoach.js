@@ -73,7 +73,7 @@ PERSONALITY:
 - Use phrases like "Nice rep", "Watch your...", "Focus on...", "Let's correct..."
 - Celebrate good form genuinely`;
 
-// ── Priority System (matches legacy voice.js) ──
+// ── Priority System ──
 const PRIORITY = {
     CRITICAL: 3,
     FORM: 2,

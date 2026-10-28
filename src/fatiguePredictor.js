@@ -5,19 +5,24 @@
  * which the fitted line crosses it.
  *
  * The fit is linear, not polynomial, and it runs on one point per completed
- * rep, each a mean over noisy per-frame scores. The output carries no
- * confidence estimate and is not validated. See the Scope section of the
+ * rep, each a mean over noisy per-frame scores. A crossing is reported only
+ * with 5+ reps and R² >= 0.5; it is still not validated. See the Scope section of the
  * README before reading anything into it.
  */
 
 const INJURY_THRESHOLD = 55; // Form score below this = injury risk
+// A crossing is only reported when the line actually explains the scores:
+// at least MIN_REPS points and an R² of at least MIN_R2. Otherwise the
+// "prediction" is a line drawn through noise.
+const MIN_REPS = 5;
+const MIN_R2 = 0.5;
 
 /**
  * Predict the rep at which the fitted score line crosses the injury threshold.
  * Ordinary least squares, first order.
  *
  * @param {number[]} repScores - Array of form scores per rep
- * @returns {{ predictedInjuryRep: number|null, trend: 'stable'|'declining'|'critical', degradationPct: number, trendLine: number[] }}
+ * @returns {{ predictedInjuryRep: number|null, trend: 'stable'|'declining'|'critical', degradationPct: number, trendLine: number[], slope: number, r2: number }}
  */
 export function predictFatigue(repScores) {
     if (repScores.length < 2) {
@@ -57,9 +62,15 @@ export function predictFatigue(repScores) {
     // Generate trend line
     const trendLine = xs.map(x => Math.round(m * x + b));
 
+    // How much of the rep-to-rep variation the line explains.
+    const meanY = sumY / n;
+    const ssTot = repScores.reduce((s, y) => s + (y - meanY) ** 2, 0);
+    const ssRes = repScores.reduce((s, y, i) => s + (y - (m * xs[i] + b)) ** 2, 0);
+    const r2 = ssTot > 0 ? 1 - ssRes / ssTot : 0;
+
     // Predict injury rep: solve m*x + b = INJURY_THRESHOLD
     let predictedInjuryRep = null;
-    if (m < -0.5) {
+    if (m < -0.5 && n >= MIN_REPS && r2 >= MIN_R2) {
         // Form is declining
         const injuryX = (INJURY_THRESHOLD - b) / m;
         if (injuryX > n && injuryX < n + 20) {
@@ -75,5 +86,6 @@ export function predictFatigue(repScores) {
         degradationPct,
         trendLine,
         slope: m,
+        r2,
     };
 }

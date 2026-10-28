@@ -29,9 +29,10 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - run: npm test
 
       # Pages is static, so /api/* is absent. main.js treats an unreachable
-      # proxy as "no capabilities" and voice.js falls back to browser speech,
+      # proxy as "no capabilities" and the coach falls back to browser speech,
       # so pose estimation, rep counting and fault detection all still run.
       - run: npm run build
 

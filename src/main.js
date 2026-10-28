@@ -240,7 +240,7 @@ function mainLoop(video, canvas) {
 
         // 7. Kinetic chain analysis (time-based: every 3s + content debounced)
         if (now - lastChainUpdateTime >= CHAIN_UPDATE_INTERVAL_MS) {
-            const chainResults = traceKineticChain(analysis.checks);
+            const chainResults = traceKineticChain(analysis.checks, selectedExercise);
             const chainHash = chainResults.map(r => r.symptom).join(',');
             if (chainHash !== lastChainHash) {
                 lastChainHash = chainHash;

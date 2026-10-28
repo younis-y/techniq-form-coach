@@ -6,6 +6,11 @@
 
 import { LANDMARKS } from './pose.js';
 
+// Body length (nose to mid-ankle, normalised image units) the pair thresholds
+// below were tuned at. Below MIN_BODY_LENGTH the body is not usefully in frame.
+const REFERENCE_BODY_LENGTH = 0.8;
+const MIN_BODY_LENGTH = 0.1;
+
 /**
  * Symmetric landmark pairs to compare.
  */
@@ -48,6 +53,15 @@ const SYMMETRIC_PAIRS = [
 export function detectAsymmetry(landmarks) {
     const results = [];
 
+    // Grade on the gap as a share of body length, so the same imbalance grades
+    // the same whether the person stands near the camera or far from it. Body
+    // length is the straight-line nose to mid-ankle distance, which also holds
+    // when the body is horizontal (push-up, sit-up).
+    const nose = landmarks[LANDMARKS.NOSE];
+    const la = landmarks[LANDMARKS.LEFT_ANKLE];
+    const ra = landmarks[LANDMARKS.RIGHT_ANKLE];
+    const bodyLength = Math.hypot(nose.x - (la.x + ra.x) / 2, nose.y - (la.y + ra.y) / 2);
+
     for (const pair of SYMMETRIC_PAIRS) {
         const left = landmarks[pair.left];
         const right = landmarks[pair.right];
@@ -55,16 +69,17 @@ export function detectAsymmetry(landmarks) {
         // Compare Y position (vertical asymmetry — the most clinically relevant)
         const yDiff = left.y - right.y;
         const absYDiff = Math.abs(yDiff);
-
-        // Normalise as a percentage of the body height (nose to ankle)
-        const bodyHeight = Math.abs(landmarks[LANDMARKS.NOSE].y - landmarks[LANDMARKS.LEFT_ANKLE].y);
-        const asymmetryPct = bodyHeight > 0 ? Math.round((absYDiff / bodyHeight) * 100) : 0;
+        const relDiff = bodyLength > MIN_BODY_LENGTH ? absYDiff / bodyLength : 0;
+        const asymmetryPct = Math.round(relDiff * 100);
 
         const direction = yDiff > 0 ? 'Left side lower' : 'Right side lower';
 
+        // Thresholds were hand-set in raw image units for a person filling
+        // about REFERENCE_BODY_LENGTH of the frame; converted once here.
+        const threshold = pair.threshold / REFERENCE_BODY_LENGTH;
         let severity = 'normal';
-        if (absYDiff > pair.threshold * 2) severity = 'significant';
-        else if (absYDiff > pair.threshold) severity = 'mild';
+        if (relDiff > threshold * 2) severity = 'significant';
+        else if (relDiff > threshold) severity = 'mild';
 
         results.push({
             name: pair.name,

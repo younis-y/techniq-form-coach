@@ -112,6 +112,147 @@ const KINETIC_CHAINS = {
             },
         ],
     },
+
+    // ===== DEPTH (keyed per lift: same id, different cause) =====
+    'squat:depth': {
+        symptom: 'Shallow Squat Depth',
+        chain: [
+            {
+                rootCause: 'Limited Ankle Dorsiflexion',
+                explanation: 'Shins cannot travel forward far enough → hips stop above knee height',
+                corrective: 'Heel-elevated goblet squats, banded ankle mobilisation',
+                muscleGroup: 'ankle',
+            },
+            {
+                rootCause: 'Limited Hip Flexion Mobility',
+                explanation: 'Hip capsule or posterior chain tightness blocks the bottom position',
+                corrective: 'Deep squat holds with support, 90/90 hip switches',
+                muscleGroup: 'hip',
+            },
+        ],
+    },
+
+    'pushup:depth': {
+        symptom: 'Shallow Push-up Depth',
+        chain: [
+            {
+                rootCause: 'Insufficient Chest and Triceps Strength',
+                explanation: 'Not enough pressing strength to control the bottom range → reps cut short',
+                corrective: 'Incline push-ups to full depth, slow eccentric push-ups',
+                muscleGroup: 'chest',
+            },
+            {
+                rootCause: 'Limited Shoulder Extension Mobility',
+                explanation: 'Tight front of shoulder stops the chest lowering towards the floor',
+                corrective: 'Doorway pec stretch, sleeper stretch',
+                muscleGroup: 'shoulder',
+            },
+        ],
+    },
+
+    // ===== LATERAL RAISE CHAINS =====
+    arm_height: {
+        symptom: 'Arm Height Off Target',
+        chain: [
+            {
+                rootCause: 'Load Too Heavy for the Lateral Delts',
+                explanation: 'Delts cannot lift the weight to shoulder height, or momentum throws it past',
+                corrective: 'Drop the weight, 2-second pause at shoulder height',
+                muscleGroup: 'shoulder',
+            },
+            {
+                rootCause: 'Poor Scapular Control',
+                explanation: 'Shoulder blade does not upwardly rotate smoothly → arm path stalls or overshoots',
+                corrective: 'Wall slides, scapular plane raises with a light band',
+                muscleGroup: 'shoulder',
+            },
+        ],
+    },
+
+    elbow_bend: {
+        symptom: 'Excess Elbow Bend',
+        chain: [
+            {
+                rootCause: 'Compensating for a Heavy Load',
+                explanation: 'Bending the elbow shortens the lever arm → the delts do less work',
+                corrective: 'Lighter dumbbells, keep a soft fixed elbow throughout',
+                muscleGroup: 'shoulder',
+            },
+            {
+                rootCause: 'Biceps Taking Over',
+                explanation: 'Elbow flexors join in when the lateral delts fatigue',
+                corrective: 'Cable lateral raises, straight-arm band raises',
+                muscleGroup: 'arm',
+            },
+        ],
+    },
+
+    shoulder_shrug: {
+        symptom: 'Shoulder Shrug',
+        chain: [
+            {
+                rootCause: 'Dominant Upper Trapezius',
+                explanation: 'Upper traps elevate the shoulder when the lateral delts cannot finish the raise',
+                corrective: 'Lighter load, depress the shoulders before each rep, Y-raises',
+                muscleGroup: 'shoulder',
+            },
+            {
+                rootCause: 'Weak Lower Trapezius',
+                explanation: 'Lower traps fail to hold the shoulder blade down → it rides up',
+                corrective: 'Prone Y-raises, scapular depression holds',
+                muscleGroup: 'back',
+            },
+        ],
+    },
+
+    // ===== SIT-UP CHAINS =====
+    rom: {
+        symptom: 'Short Sit-up Range',
+        chain: [
+            {
+                rootCause: 'Weak Rectus Abdominis',
+                explanation: 'Abdominals cannot flex the trunk all the way up',
+                corrective: 'Slow negative sit-ups, dead bugs',
+                muscleGroup: 'core',
+            },
+            {
+                rootCause: 'Tight Hip Flexors',
+                explanation: 'Hip flexors pull the pelvis forward and take over the movement',
+                corrective: 'Half-kneeling hip flexor stretch, crunches with feet unanchored',
+                muscleGroup: 'hip',
+            },
+        ],
+    },
+
+    neck_strain: {
+        symptom: 'Neck Pulling',
+        chain: [
+            {
+                rootCause: 'Weak Deep Neck Flexors',
+                explanation: 'Neck cannot hold its position → chin is pulled towards the chest',
+                corrective: 'Chin tucks, keep a fist-sized gap between chin and chest',
+                muscleGroup: 'neck',
+            },
+            {
+                rootCause: 'Hands Pulling on the Head',
+                explanation: 'Arms do the lifting when the core fatigues',
+                corrective: 'Cross the arms over the chest instead',
+                muscleGroup: 'core',
+            },
+        ],
+    },
+
+    knee_position: {
+        symptom: 'Legs Too Straight',
+        chain: [
+            {
+                rootCause: 'Setup: Feet Too Far Out',
+                explanation: 'Straight legs hand the work to the hip flexors and load the lower back',
+                corrective: 'Bend knees to about 90°, feet flat and hip-width apart',
+                muscleGroup: 'hip',
+            },
+        ],
+    },
 };
 
 /**
@@ -119,15 +260,16 @@ const KINETIC_CHAINS = {
  * for any faults and return root-cause analyses.
  *
  * @param {Array} checks - Form checks from analyseForm()
+ * @param {string} [exercise] - Selected lift; picks a per-lift chain such as 'squat:depth' when one exists
  * @returns {Array<{ symptom: string, rootCause: string, explanation: string, corrective: string, muscleGroup: string }>}
  */
-export function traceKineticChain(checks) {
+export function traceKineticChain(checks, exercise) {
     const results = [];
 
     for (const check of checks) {
         if (check.severity === 'success') continue;
 
-        const chain = KINETIC_CHAINS[check.id];
+        const chain = KINETIC_CHAINS[`${exercise}:${check.id}`] || KINETIC_CHAINS[check.id];
         if (!chain) continue;
 
         // Return the most likely root cause (first in the chain)
